@@ -8,6 +8,7 @@ use std::{
 use anyhow::anyhow;
 use axum::{response::Json as JsonResponse, routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use wasi_common::{pipe::WritePipe, sync::WasiCtxBuilder};
 use wasmtime::{Engine, Linker, Memory, Module, Store};
 
@@ -29,7 +30,7 @@ struct CodeSubmission {
 #[derive(Serialize)]
 struct ExecutionResult {
     stdout: String,
-    result: String,
+    result: Value,
 }
 
 async fn execute_code(Json(payload): Json<CodeSubmission>) -> JsonResponse<ExecutionResult> {
@@ -37,18 +38,36 @@ async fn execute_code(Json(payload): Json<CodeSubmission>) -> JsonResponse<Execu
         Ok(result) => JsonResponse(result),
         Err(err) => JsonResponse(ExecutionResult {
             stdout: format!("Error: {}", err),
-            result: String::new(),
+            result: serde_json::Value::Null,
         }),
     }
 }
 
-async fn compile_and_run_wasm(
-    source_code: &str) -> Result<ExecutionResult, anyhow::Error> {
+fn write_file(source_code: &str) -> Result<(), anyhow::Error> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("./template/src/submission.rs")?;
+
+    file.write_all(source_code.as_bytes())?;
+
+    Ok(())
+}
+
+async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResult, anyhow::Error> {
     let _file = write_file(source_code)?;
     let output = Command::new("cargo")
-            .args(["build", "--release", "--target", "wasm32-wasip1"])
-            .current_dir("./wasm")
-            .output()?;
+        .args([
+            "build",
+            "--release",
+            "--target",
+            "wasm32-wasip1",
+            "--target-dir",
+            "../target",
+        ])
+        .current_dir("./template")
+        .output()?;
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -57,18 +76,6 @@ async fn compile_and_run_wasm(
         ));
     }
     run_wasm()
-}
-
-fn write_file(source_code: &str) -> Result<(), anyhow::Error> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open("./wasm/src/submission.rs")?;
-
-    file.write_all(source_code.as_bytes())?;
-
-    Ok(())
 }
 
 fn run_wasm() -> Result<ExecutionResult, anyhow::Error> {
@@ -88,7 +95,7 @@ fn run_wasm() -> Result<ExecutionResult, anyhow::Error> {
 
     let mut store = Store::new(&engine, wasi);
 
-    let module = Module::from_file(&engine, "target/wasm32-wasip1/release/wasm.wasm")?;
+    let module = Module::from_file(&engine, "target/wasm32-wasip1/release/user_code.wasm")?;
     let instance = linker.instantiate(&mut store, &module)?;
 
     let memory: Memory = instance.get_memory(&mut store, "memory").unwrap();
@@ -101,10 +108,11 @@ fn run_wasm() -> Result<ExecutionResult, anyhow::Error> {
     let output = String::from_utf8_lossy(&read);
 
     let comp_res = resolve_string(&memory.data(&store), ptr)?;
+    let deserialized: Value = serde_json::from_str(&comp_res)?;
 
     Ok(ExecutionResult {
         stdout: output.to_string(),
-        result: comp_res,
+        result: deserialized,
     })
 }
 
