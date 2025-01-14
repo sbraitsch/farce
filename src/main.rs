@@ -16,11 +16,11 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let app = Router::new()
-        .route("/v1/execute", post(sandbox_v1::execute_code))
-        .route("/v2/execute", post(sandbox_v2::execute_code))
+        .route("/farce/v1/execute", post(sandbox_v1::execute_code))
+        .route("/farce/v2/execute", post(sandbox_v2::execute_code))
         .layer(CorsLayer::permissive());
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("Server running on port 3000");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8081").await.unwrap();
+    println!("Server running on port 8081");
     axum::serve(listener, app).await.unwrap();
 }
 
