@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 WORKDIR /app
 COPY ./target/x86_64-unknown-linux-musl/release/farce /app/farce
-COPY ./template /app/template
+COPY templates /app/templates
 RUN mkdir /app/target
 RUN chmod +x /app/farce
 

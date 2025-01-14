@@ -23,7 +23,17 @@ pub struct ExecutionResultV2 {
 }
 
 pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResultV2> {
-    match compile_and_run_wasm(&payload.source_code).await {
+    match compile_and_run_wasm(&payload.source_code, false).await {
+        Ok(result) => Json(result),
+        Err(err) => Json(ExecutionResultV2 {
+            stdout: Some(format!("Error: {}", err)),
+            result: serde_json::Value::Null,
+        }),
+    }
+}
+
+pub async fn execute_decoder(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResultV2> {
+    match compile_and_run_wasm(&payload.source_code, true).await {
         Ok(result) => Json(result),
         Err(err) => Json(ExecutionResultV2 {
             stdout: Some(format!("Error: {}", err)),
@@ -65,9 +75,9 @@ fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, anyhow::Error> {
+async fn compile_and_run_wasm(source_code: &str, decoder: bool) -> Result<ExecutionResultV2, anyhow::Error> {
     let temp_dir = tempdir()?;
-    let src_dir = Path::new("template");
+    let src_dir = if decoder { Path::new("templates/decoder") } else { Path::new("templates/arbitrary") };
     let dst_dir = temp_dir.path();
     copy_template(src_dir, dst_dir)?;
 
