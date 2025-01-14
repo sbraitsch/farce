@@ -1,2 +1,0 @@
-Cargo build wasm to shared /target (must be in that directory):
-    cargo build --target wasm32-wasip1 --release --target-dir ../target/
