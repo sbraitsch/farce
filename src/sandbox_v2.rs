@@ -18,7 +18,7 @@ use crate::{resolve_string, CodeSubmission};
 
 #[derive(Serialize)]
 pub struct ExecutionResultV2 {
-    stdout: String,
+    stdout: Option<String>,
     result: serde_json::Value,
 }
 
@@ -26,7 +26,7 @@ pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<Execution
     match compile_and_run_wasm(&payload.source_code).await {
         Ok(result) => Json(result),
         Err(err) => Json(ExecutionResultV2 {
-            stdout: format!("Error: {}", err),
+            stdout: Some(format!("Error: {}", err)),
             result: serde_json::Value::Null,
         }),
     }
@@ -73,8 +73,7 @@ async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, an
 
     let _file = write_file(&dst_dir.join("src/submission.rs"), source_code)?;
 
-    let current_dir = env::current_dir()?;
-    let target_dir = current_dir.join("target");
+    let target_dir = env::current_dir()?.join("target");
 
     let output = Command::new("cargo")
         .args([
@@ -128,11 +127,13 @@ fn run_wasm() -> Result<ExecutionResultV2, anyhow::Error> {
     let read = stdout_buffer.read().unwrap();
     let output = String::from_utf8_lossy(&read);
 
+    let stdout = if output.len() > 0 { Some(output.to_string()) } else { None };
+    
     let result = resolve_string(&memory.data(&store), ptr)?;
     let deserialized: serde_json::Value = serde_json::from_str(&result)?;
 
     Ok(ExecutionResultV2 {
-        stdout: output.to_string(),
+        stdout,
         result: deserialized,
     })
 }

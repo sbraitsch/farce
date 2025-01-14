@@ -3,6 +3,7 @@ mod sandbox_v1;
 mod sandbox_v2;
 
 use axum::{routing::post, Router};
+use tower_http::cors::CorsLayer;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -16,7 +17,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/v1/execute", post(sandbox_v1::execute_code))
-        .route("/v2/execute", post(sandbox_v2::execute_code));
+        .route("/v2/execute", post(sandbox_v2::execute_code))
+        .layer(CorsLayer::permissive());
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("Server running on port 3000");
     axum::serve(listener, app).await.unwrap();
