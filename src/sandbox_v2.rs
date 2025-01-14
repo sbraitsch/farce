@@ -68,7 +68,7 @@ fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
 async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, anyhow::Error> {
     let temp_dir = tempdir()?;
     let src_dir = Path::new("template");
-    println!("Template source directory: {src_dir:?}");
+    println!("Template source directory?: {:?}", env::current_dir());
     let dst_dir = temp_dir.path();
     copy_template(src_dir, dst_dir)?;
 
