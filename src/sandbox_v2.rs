@@ -79,6 +79,12 @@ async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, an
     let target_dir = env::current_dir()?.join("target");
     println!("Compiling to {target_dir:?}");
     println!("Temp dir is {dst_dir:?}");
+    if !target_dir.exists() {
+        return Err(anyhow::anyhow!("target_dir does not exist: {:?}", target_dir));
+    }
+    if !dst_dir.exists() {
+        return Err(anyhow::anyhow!("dst_dir does not exist: {:?}", target_dir));
+    }
     let output = Command::new("cargo")
         .args([
             "build",
@@ -92,6 +98,8 @@ async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, an
         ])
         .current_dir(dst_dir)
         .output()?;
+
+    println!("Compilation succeeded!");
 
     if !output.status.success() {
         return Err(anyhow!(
