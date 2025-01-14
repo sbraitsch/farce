@@ -5,7 +5,7 @@ COPY ./template /app/template
 RUN mkdir /app/target
 RUN chmod +x /app/farce
 
-RUN apt-get update && apt-get install -y libssl3 curl ca-certificates && apt-get clean
+RUN apt-get update && apt-get install -y libssl3 curl ca-certificates build-essential && apt-get clean
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 ENV PATH="/root/.cargo/bin:${PATH}"
