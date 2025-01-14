@@ -33,7 +33,6 @@ pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<Execution
 }
 
 fn write_file(path: &Path, source_code: &str) -> Result<(), anyhow::Error> {
-    println!("Writing submitted code to {path:?}");
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
@@ -48,14 +47,12 @@ fn write_file(path: &Path, source_code: &str) -> Result<(), anyhow::Error> {
 }
 
 fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
-    println!("Begin copying template dir");
     if !dst.exists() {
         fs::create_dir_all(dst)?;
     }
 
     for entry in fs::read_dir(src)? {
         let entry = entry?;
-        println!("Copying {:?}", entry.path());
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         let ty = entry.file_type()?;
@@ -77,14 +74,7 @@ async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, an
     write_file(&dst_dir.join("src/submission.rs"), source_code)?;
 
     let target_dir = env::current_dir()?.join("target");
-    println!("Compiling to {target_dir:?}");
-    println!("Temp dir is {dst_dir:?}");
-    if !target_dir.exists() {
-        return Err(anyhow::anyhow!("target_dir does not exist: {:?}", target_dir));
-    }
-    if !dst_dir.exists() {
-        return Err(anyhow::anyhow!("dst_dir does not exist: {:?}", target_dir));
-    }
+
     let output = Command::new("cargo")
         .args([
             "build",
@@ -98,8 +88,6 @@ async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, an
         ])
         .current_dir(dst_dir)
         .output()?;
-
-    println!("Compilation succeeded!");
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -127,7 +115,6 @@ fn run_wasm() -> Result<ExecutionResultV2, anyhow::Error> {
 
     let mut store = Store::new(&engine, wasi);
 
-    println!("Building wasm module from file.");
     let module = Module::from_file(&engine, "target/wasm32-wasip1/release/user_code.wasm")?;
     let instance = linker.instantiate(&mut store, &module)?;
 
