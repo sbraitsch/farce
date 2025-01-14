@@ -14,7 +14,9 @@ pub struct CodeSubmission {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let app = Router::new().route("/execute", post(sandbox_v2::execute_code));
+    let app = Router::new()
+        .route("/v1/execute", post(sandbox_v1::execute_code))
+        .route("/v2/execute", post(sandbox_v2::execute_code));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("Server running on port 3000");
     axum::serve(listener, app).await.unwrap();

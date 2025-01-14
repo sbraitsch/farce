@@ -1,11 +1,14 @@
 use anyhow::anyhow;
 use axum::Json;
 use std::{
-    fs::OpenOptions,
+    env,
+    fs::{self, OpenOptions},
     io::Write,
+    path::Path,
     process::Command,
     sync::{Arc, RwLock},
 };
+use tempfile::tempdir;
 
 use serde::Serialize;
 use wasi_common::{pipe::WritePipe, sync::WasiCtxBuilder};
@@ -29,20 +32,50 @@ pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<Execution
     }
 }
 
-fn write_file(source_code: &str) -> Result<(), anyhow::Error> {
+fn write_file(path: &Path, source_code: &str) -> Result<(), anyhow::Error> {
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open("./template/src/submission.rs")?;
+        .open(path)?;
 
-    file.write_all(source_code.as_bytes())?;
+    let import = "use serde::Serialize;";
+    writeln!(file, "{}", import)?;
+    write!(file, "{}", source_code)?;
 
     Ok(())
 }
 
+fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)?;
+    }
+
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_template(&src_path, &dst_path)?;
+        } else {
+            fs::copy(src_path, dst_path)?;
+        }
+    }
+    Ok(())
+}
+
 async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, anyhow::Error> {
-    let _file = write_file(source_code)?;
+    let temp_dir = tempdir()?;
+    let src_dir = Path::new("template");
+    let dst_dir = temp_dir.path();
+    copy_template(src_dir, dst_dir)?;
+
+    let _file = write_file(&dst_dir.join("src/submission.rs"), source_code)?;
+
+    let current_dir = env::current_dir()?;
+    let target_dir = current_dir.join("target");
+
     let output = Command::new("cargo")
         .args([
             "build",
@@ -50,9 +83,11 @@ async fn compile_and_run_wasm(source_code: &str) -> Result<ExecutionResultV2, an
             "--target",
             "wasm32-wasip1",
             "--target-dir",
-            "../target",
+            target_dir
+                .to_str()
+                .ok_or(anyhow!("Failed to convert target directory to str."))?,
         ])
-        .current_dir("./template")
+        .current_dir(dst_dir)
         .output()?;
 
     if !output.status.success() {
