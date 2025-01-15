@@ -9,6 +9,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct CodeSubmission {
     source_code: String,
+    function: String,
 }
 
 #[tokio::main]
@@ -18,7 +19,6 @@ async fn main() {
     let app = Router::new()
         .route("/farce/v1/execute", post(sandbox_v1::execute_code))
         .route("/farce/v2/execute", post(sandbox_v2::execute_code))
-        .route("/farce/v2/decode", post(sandbox_v2::execute_decoder))
         .layer(CorsLayer::permissive());
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8081").await.unwrap();
     println!("Server running on port 8081");

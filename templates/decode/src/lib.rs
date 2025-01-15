@@ -4,6 +4,15 @@ use submission::execute;
 use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use serde::Serialize;
+
+#[repr(C)]
+#[derive(Serialize)]
+struct WorkResult {
+    success: bool,
+    expected: String,
+    result: String,
+}
 
 #[no_mangle]
 pub extern "C" fn run() -> *const i32 {
@@ -21,8 +30,15 @@ pub extern "C" fn run() -> *const i32 {
             *letter_map.get(&c).unwrap_or(&c)
         })
         .collect();
+    let decoded = &execute(&encoded, letter_map);
 
-    let message = serde_json::to_string(&execute(&encoded, letter_map)).unwrap();
+    let out = WorkResult {
+        success: decoded == input,
+        expected: input.to_owned(),
+        result: decoded.to_owned(),
+    };
+
+    let message = serde_json::to_string(&out).unwrap();
     let ptr = message.as_ptr() as i32;
     let length = message.len() as i32;
     std::mem::forget(message);

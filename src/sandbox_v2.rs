@@ -18,26 +18,16 @@ use crate::{resolve_string, CodeSubmission};
 
 #[derive(Serialize)]
 pub struct ExecutionResultV2 {
-    stdout: Option<String>,
-    result: serde_json::Value,
+    log: Option<String>,
+    out: serde_json::Value,
 }
 
 pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResultV2> {
-    match compile_and_run_wasm(&payload.source_code, false).await {
+    match compile_and_run_wasm(&payload).await {
         Ok(result) => Json(result),
         Err(err) => Json(ExecutionResultV2 {
-            stdout: Some(format!("Error: {}", err)),
-            result: serde_json::Value::Null,
-        }),
-    }
-}
-
-pub async fn execute_decoder(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResultV2> {
-    match compile_and_run_wasm(&payload.source_code, true).await {
-        Ok(result) => Json(result),
-        Err(err) => Json(ExecutionResultV2 {
-            stdout: Some(format!("Error: {}", err)),
-            result: serde_json::Value::Null,
+            log: Some(format!("Error: {}", err)),
+            out: serde_json::Value::Null,
         }),
     }
 }
@@ -53,6 +43,13 @@ fn write_file(path: &Path, source_code: &str) -> Result<(), anyhow::Error> {
     writeln!(file, "{}", import)?;
     write!(file, "{}", source_code)?;
 
+    Ok(())
+}
+
+fn customize_cargo(path: &Path, unique_name: &str) -> Result<(), anyhow::Error> {
+    let mut file = OpenOptions::new().append(true).open(path)?;
+
+    writeln!(file, "name = \"{}\"", unique_name)?;
     Ok(())
 }
 
@@ -75,13 +72,25 @@ fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn compile_and_run_wasm(source_code: &str, decoder: bool) -> Result<ExecutionResultV2, anyhow::Error> {
+async fn compile_and_run_wasm(
+    payload: &CodeSubmission,
+) -> Result<ExecutionResultV2, anyhow::Error> {
     let temp_dir = tempdir()?;
-    let src_dir = if decoder { Path::new("templates/decoder") } else { Path::new("templates/arbitrary") };
+    let template = format!("templates/{}", payload.function);
+    let src_dir = Path::new(&template);
     let dst_dir = temp_dir.path();
     copy_template(src_dir, dst_dir)?;
 
-    write_file(&dst_dir.join("src/submission.rs"), source_code)?;
+    write_file(&dst_dir.join("src/submission.rs"), &payload.source_code)?;
+    let unique_name = format!(
+        "user{}",
+        dst_dir
+            .file_name()
+            .ok_or(anyhow!("Error reading generated temp name."))?
+            .to_str()
+            .ok_or(anyhow!("Error converting temp name to string"))?
+    ).replace(".", "_");
+    customize_cargo(&dst_dir.join("cargo.toml"), &unique_name)?;
 
     let target_dir = env::current_dir()?.join("target");
 
@@ -105,11 +114,12 @@ async fn compile_and_run_wasm(source_code: &str, decoder: bool) -> Result<Execut
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    run_wasm()
+
+    run_wasm(&unique_name)
 }
 
-fn run_wasm() -> Result<ExecutionResultV2, anyhow::Error> {
-    let engine = Engine::default();
+fn run_wasm(file_name: &str) -> Result<ExecutionResultV2, anyhow::Error> {
+    let engine = Engine::new(wasmtime::Config::new().consume_fuel(true))?;
     let mut linker = Linker::new(&engine);
     // include necessary imports
     wasi_common::sync::add_to_linker(&mut linker, |s| s)?;
@@ -124,8 +134,9 @@ fn run_wasm() -> Result<ExecutionResultV2, anyhow::Error> {
         .build();
 
     let mut store = Store::new(&engine, wasi);
+    store.set_fuel(500_000)?;
 
-    let module = Module::from_file(&engine, "target/wasm32-wasip1/release/user_code.wasm")?;
+    let module = Module::from_file(&engine, format!("target/wasm32-wasip1/release/{file_name}.wasm"))?;
     let instance = linker.instantiate(&mut store, &module)?;
 
     let memory: Memory = instance.get_memory(&mut store, "memory").unwrap();
@@ -137,13 +148,20 @@ fn run_wasm() -> Result<ExecutionResultV2, anyhow::Error> {
     let read = stdout_buffer.read().unwrap();
     let output = String::from_utf8_lossy(&read);
 
-    let stdout = if output.len() > 0 { Some(output.to_string()) } else { None };
-    
-    let result = resolve_string(&memory.data(&store), ptr)?;
+    let stdout = if output.is_empty() {
+        Some(output.to_string())
+    } else {
+        None
+    };
+
+    let result = resolve_string(memory.data(&store), ptr)?;
     let deserialized: serde_json::Value = serde_json::from_str(&result)?;
 
+    fs::remove_file(format!("target/wasm32-wasip1/release/{file_name}.wasm"))?;
+    fs::remove_file(format!("target/wasm32-wasip1/release/{file_name}.d"))?;
+
     Ok(ExecutionResultV2 {
-        stdout,
-        result: deserialized,
+        log: stdout,
+        out: deserialized,
     })
 }
