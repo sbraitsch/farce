@@ -1,6 +1,6 @@
-mod submission;
+mod boilerplate;
 
-use submission::execute;
+use boilerplate::execute;
 
 #[no_mangle]
 pub extern "C" fn run() -> *const i32 {

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
-mod sandbox_v1;
-mod sandbox_v2;
+mod sandbox;
+mod boilerplate;
 
-use axum::{routing::post, Router};
+use axum::{routing::{ post, get }, Router};
 use tower_http::cors::CorsLayer;
 use serde::Deserialize;
 
@@ -17,8 +17,8 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let app = Router::new()
-        .route("/farce/v1/execute", post(sandbox_v1::execute_code))
-        .route("/farce/v2/execute", post(sandbox_v2::execute_code))
+        .route("/farce/execute", post(sandbox::execute_code))
+        .route("/farce/boilerplate/{function}", get(boilerplate::retrieve))
         .layer(CorsLayer::permissive());
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8081").await.unwrap();
     println!("Server running on port 8081");

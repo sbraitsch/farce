@@ -12,23 +12,35 @@ use tempfile::tempdir;
 
 use serde::Serialize;
 use wasi_common::{pipe::WritePipe, sync::WasiCtxBuilder};
-use wasmtime::{Engine, Linker, Memory, Module, Store};
+use wasmtime::{Engine, Linker, Memory, Module, Store, Trap};
 
 use crate::{resolve_string, CodeSubmission};
 
 #[derive(Serialize)]
-pub struct ExecutionResultV2 {
+pub struct ExecutionResult {
     log: Option<String>,
-    out: serde_json::Value,
+out: serde_json::Value,
 }
 
-pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResultV2> {
+pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResult> {
     match compile_and_run_wasm(&payload).await {
         Ok(result) => Json(result),
-        Err(err) => Json(ExecutionResultV2 {
-            log: Some(format!("Error: {}", err)),
-            out: serde_json::Value::Null,
-        }),
+        Err(err) => {
+            if let Some(oof) = err.downcast_ref::<Trap>() {
+                if matches!(oof, Trap::OutOfFuel) {
+                    return Json(ExecutionResult {
+                        log: Some(String::from(
+                            "Instruction maximum exceeded. Aborted execution to avoid DOS.",
+                        )),
+                        out: serde_json::Value::Null,
+                    });
+                }
+            }
+            Json(ExecutionResult {
+                log: Some(format!("Error: {}", err)),
+                out: serde_json::Value::Null,
+            })
+        }
     }
 }
 
@@ -39,8 +51,6 @@ fn write_file(path: &Path, source_code: &str) -> Result<(), anyhow::Error> {
         .truncate(true)
         .open(path)?;
 
-    let import = "use serde::Serialize;";
-    writeln!(file, "{}", import)?;
     write!(file, "{}", source_code)?;
 
     Ok(())
@@ -74,14 +84,14 @@ fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
 
 async fn compile_and_run_wasm(
     payload: &CodeSubmission,
-) -> Result<ExecutionResultV2, anyhow::Error> {
+) -> Result<ExecutionResult, anyhow::Error> {
     let temp_dir = tempdir()?;
     let template = format!("templates/{}", payload.function);
     let src_dir = Path::new(&template);
     let dst_dir = temp_dir.path();
     copy_template(src_dir, dst_dir)?;
 
-    write_file(&dst_dir.join("src/submission.rs"), &payload.source_code)?;
+    write_file(&dst_dir.join("src/boilerplate.rs"), &payload.source_code)?;
     let unique_name = format!(
         "user{}",
         dst_dir
@@ -89,7 +99,8 @@ async fn compile_and_run_wasm(
             .ok_or(anyhow!("Error reading generated temp name."))?
             .to_str()
             .ok_or(anyhow!("Error converting temp name to string"))?
-    ).replace(".", "_");
+    )
+    .replace(".", "_");
     customize_cargo(&dst_dir.join("cargo.toml"), &unique_name)?;
 
     let target_dir = env::current_dir()?.join("target");
@@ -118,7 +129,7 @@ async fn compile_and_run_wasm(
     run_wasm(&unique_name)
 }
 
-fn run_wasm(file_name: &str) -> Result<ExecutionResultV2, anyhow::Error> {
+fn run_wasm(file_name: &str) -> Result<ExecutionResult, anyhow::Error> {
     let engine = Engine::new(wasmtime::Config::new().consume_fuel(true))?;
     let mut linker = Linker::new(&engine);
     // include necessary imports
@@ -136,7 +147,10 @@ fn run_wasm(file_name: &str) -> Result<ExecutionResultV2, anyhow::Error> {
     let mut store = Store::new(&engine, wasi);
     store.set_fuel(500_000)?;
 
-    let module = Module::from_file(&engine, format!("target/wasm32-wasip1/release/{file_name}.wasm"))?;
+    let module = Module::from_file(
+        &engine,
+        format!("target/wasm32-wasip1/release/{file_name}.wasm"),
+    )?;
     let instance = linker.instantiate(&mut store, &module)?;
 
     let memory: Memory = instance.get_memory(&mut store, "memory").unwrap();
@@ -160,7 +174,7 @@ fn run_wasm(file_name: &str) -> Result<ExecutionResultV2, anyhow::Error> {
     fs::remove_file(format!("target/wasm32-wasip1/release/{file_name}.wasm"))?;
     fs::remove_file(format!("target/wasm32-wasip1/release/{file_name}.d"))?;
 
-    Ok(ExecutionResultV2 {
+    Ok(ExecutionResult {
         log: stdout,
         out: deserialized,
     })

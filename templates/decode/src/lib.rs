@@ -1,6 +1,6 @@
-mod submission;
+mod boilerplate;
 
-use submission::execute;
+use boilerplate::decode;
 use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -30,7 +30,7 @@ pub extern "C" fn run() -> *const i32 {
             *letter_map.get(&c).unwrap_or(&c)
         })
         .collect();
-    let decoded = &execute(&encoded, letter_map);
+    let decoded = &decode(&encoded, letter_map);
 
     let out = WorkResult {
         success: decoded == input,
