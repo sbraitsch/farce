@@ -164,7 +164,7 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
 
     let memory: Memory = instance.get_memory(&mut store, "memory").unwrap();
 
-    let mut ptr = 0;
+    let ptr;
 
     if let Function::Param = payload.function {
         let run = instance.get_typed_func::<(i32, i32), i32>(&mut store, "run")?;
@@ -183,7 +183,7 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
         ptr = run.call(&mut store, (offset as i32, length as i32))? as usize;
     } else {
         let run = instance.get_typed_func::<(), i32>(&mut store, "run")?;
-        run.call(&mut store, ())? as usize;
+        ptr = run.call(&mut store, ())? as usize;
     }
 
 

@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 enum Function {
     Arbitrary,
     Decode,
-    Param
+    Param,
+    Prime
 }
 
 #[derive(Deserialize)]
