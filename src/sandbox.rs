@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use axum::Json;
+use serde_json::json;
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -14,12 +15,12 @@ use serde::Serialize;
 use wasi_common::{pipe::WritePipe, sync::WasiCtxBuilder};
 use wasmtime::{Engine, Linker, Memory, Module, Store, Trap};
 
-use crate::{resolve_string, CodeSubmission};
+use crate::{resolve_string, CodeSubmission, Function};
 
 #[derive(Serialize)]
 pub struct ExecutionResult {
     log: Option<String>,
-out: serde_json::Value,
+    out: serde_json::Value,
 }
 
 pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<ExecutionResult> {
@@ -82,16 +83,23 @@ fn copy_template(src: &Path, dst: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn compile_and_run_wasm(
-    payload: &CodeSubmission,
-) -> Result<ExecutionResult, anyhow::Error> {
+async fn compile_and_run_wasm(payload: &CodeSubmission) -> Result<ExecutionResult, anyhow::Error> {
     let temp_dir = tempdir()?;
-    let template = format!("templates/{}", payload.function);
+
+    let template = format!(
+        "templates/{}",
+        json!(&payload.function)
+            .as_str()
+            .ok_or(anyhow!("Error deserializing function enum"))?
+    );
     let src_dir = Path::new(&template);
     let dst_dir = temp_dir.path();
     copy_template(src_dir, dst_dir)?;
 
-    write_file(&dst_dir.join("src/boilerplate.rs"), &payload.source_code)?;
+    if !matches!(payload.function, Function::Param) {
+        write_file(&dst_dir.join("src/boilerplate.rs"), &payload.source_code)?
+    }
+
     let unique_name = format!(
         "user{}",
         dst_dir
@@ -126,10 +134,10 @@ async fn compile_and_run_wasm(
         ));
     }
 
-    run_wasm(&unique_name)
+    run_wasm(&unique_name, &payload)
 }
 
-fn run_wasm(file_name: &str) -> Result<ExecutionResult, anyhow::Error> {
+fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult, anyhow::Error> {
     let engine = Engine::new(wasmtime::Config::new().consume_fuel(true))?;
     let mut linker = Linker::new(&engine);
     // include necessary imports
@@ -153,11 +161,31 @@ fn run_wasm(file_name: &str) -> Result<ExecutionResult, anyhow::Error> {
     )?;
     let instance = linker.instantiate(&mut store, &module)?;
 
+
     let memory: Memory = instance.get_memory(&mut store, "memory").unwrap();
 
-    let run = instance.get_typed_func::<(), i32>(&mut store, "run")?;
+    let mut ptr = 0;
 
-    let ptr = run.call(&mut store, ())? as usize;
+    if let Function::Param = payload.function {
+        let run = instance.get_typed_func::<(i32, i32), i32>(&mut store, "run")?;
+        let param = payload.param.clone().ok_or(anyhow!(
+                    "Param function called without passing a parameter."
+                ))?;
+
+        let offset = 0;
+        let length = param.len();
+        memory.write(
+            &mut store,
+            offset,
+            param.as_bytes(),
+        )?;
+
+        ptr = run.call(&mut store, (offset as i32, length as i32))? as usize;
+    } else {
+        let run = instance.get_typed_func::<(), i32>(&mut store, "run")?;
+        run.call(&mut store, ())? as usize;
+    }
+
 
     let read = stdout_buffer.read().unwrap();
     let output = String::from_utf8_lossy(&read);

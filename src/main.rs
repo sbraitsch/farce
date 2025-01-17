@@ -4,13 +4,23 @@ mod boilerplate;
 
 use axum::{routing::{ post, get }, Router};
 use tower_http::cors::CorsLayer;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Function {
+    Arbitrary,
+    Decode,
+    Param
+}
 
 #[derive(Deserialize)]
 pub struct CodeSubmission {
     source_code: String,
-    function: String,
+    function: Function,
+    param: Option<String>
 }
+
 
 #[tokio::main]
 async fn main() {
