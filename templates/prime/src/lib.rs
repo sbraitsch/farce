@@ -1,6 +1,6 @@
-mod boilerplate;
+mod scaffold;
 
-use boilerplate::find_primes;
+use scaffold::find_primes;
 
 #[no_mangle]
 pub extern "C" fn run() -> *const i32 {

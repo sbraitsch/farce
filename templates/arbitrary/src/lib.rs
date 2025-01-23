@@ -1,6 +1,6 @@
-mod boilerplate;
+mod scaffold;
 
-use boilerplate::execute;
+use scaffold::execute;
 
 #[no_mangle]
 pub extern "C" fn run() -> *const i32 {

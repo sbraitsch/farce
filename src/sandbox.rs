@@ -97,7 +97,7 @@ async fn compile_and_run_wasm(payload: &CodeSubmission) -> Result<ExecutionResul
     copy_template(src_dir, dst_dir)?;
 
     if !matches!(payload.function, Function::Param) {
-        write_file(&dst_dir.join("src/boilerplate.rs"), &payload.source_code)?
+        write_file(&dst_dir.join("src/scaffold.rs"), &payload.user_input)?
     }
 
     let unique_name = format!(
@@ -146,11 +146,7 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
     let stdout_buffer = Arc::new(RwLock::new(Vec::new()));
     let stdout_pipe = WritePipe::from_shared(stdout_buffer.clone());
 
-    let wasi = WasiCtxBuilder::new()
-        .inherit_stdio()
-        .stdout(Box::new(stdout_pipe))
-        .inherit_args()?
-        .build();
+    let wasi = WasiCtxBuilder::new().stdout(Box::new(stdout_pipe)).build();
 
     let mut store = Store::new(&engine, wasi);
     store.set_fuel(500_000)?;
@@ -161,24 +157,16 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
     )?;
     let instance = linker.instantiate(&mut store, &module)?;
 
-
     let memory: Memory = instance.get_memory(&mut store, "memory").unwrap();
 
     let ptr;
 
     if let Function::Param = payload.function {
         let run = instance.get_typed_func::<(i32, i32), i32>(&mut store, "run")?;
-        let param = payload.param.clone().ok_or(anyhow!(
-                    "Param function called without passing a parameter."
-                ))?;
 
         let offset = 0;
-        let length = param.len();
-        memory.write(
-            &mut store,
-            offset,
-            param.as_bytes(),
-        )?;
+        let length = payload.user_input.len();
+        memory.write(&mut store, offset, payload.user_input.as_bytes())?;
 
         ptr = run.call(&mut store, (offset as i32, length as i32))? as usize;
     } else {
@@ -186,15 +174,10 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
         ptr = run.call(&mut store, ())? as usize;
     }
 
-
     let read = stdout_buffer.read().unwrap();
     let output = String::from_utf8_lossy(&read);
 
-    let stdout = if output.is_empty() {
-        Some(output.to_string())
-    } else {
-        None
-    };
+    let stdout = (!output.is_empty()).then(|| output.to_string());
 
     let result = resolve_string(memory.data(&store), ptr)?;
     let deserialized: serde_json::Value = serde_json::from_str(&result)?;

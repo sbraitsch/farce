@@ -1,10 +1,13 @@
 #![allow(dead_code)]
 mod sandbox;
-mod boilerplate;
+mod scaffold;
 
-use axum::{routing::{ post, get }, Router};
-use tower_http::cors::CorsLayer;
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use serde::{Deserialize, Serialize};
+use tower_http::cors::CorsLayer;
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -12,16 +15,14 @@ enum Function {
     Arbitrary,
     Decode,
     Param,
-    Prime
+    Prime,
 }
 
 #[derive(Deserialize)]
 pub struct CodeSubmission {
-    source_code: String,
+    user_input: String,
     function: Function,
-    param: Option<String>
 }
-
 
 #[tokio::main]
 async fn main() {
@@ -29,7 +30,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/farce/execute", post(sandbox::execute_code))
-        .route("/farce/boilerplate/{function}", get(boilerplate::retrieve))
+        .route("/farce/scaffold/{function}", get(scaffold::retrieve))
         .layer(CorsLayer::permissive());
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8081").await.unwrap();
     println!("Server running on port 8081");

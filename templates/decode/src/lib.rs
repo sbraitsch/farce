@@ -1,10 +1,10 @@
-mod boilerplate;
+mod scaffold;
 
-use boilerplate::decode;
-use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use scaffold::decode;
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[repr(C)]
 #[derive(Serialize)]
@@ -25,10 +25,9 @@ pub extern "C" fn run() -> *const i32 {
     }
 
     let input = "frontend development sucks";
-    let encoded: String =  input.chars()
-        .map(|c| {
-            *letter_map.get(&c).unwrap_or(&c)
-        })
+    let encoded: String = input
+        .chars()
+        .map(|c| *letter_map.get(&c).unwrap_or(&c))
         .collect();
     let decoded = &decode(&encoded, letter_map);
 

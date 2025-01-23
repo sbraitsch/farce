@@ -1,10 +1,10 @@
-mod boilerplate;
+mod scaffold;
 
-use boilerplate::count_chars;
+use scaffold::count_chars;
 
 #[no_mangle]
 pub extern "C" fn run(ptr: *const u8, length: i32) -> *const i32 {
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, length as usize)};
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, length as usize) };
     let input = String::from_utf8(bytes.to_vec()).unwrap();
     let message = serde_json::to_string(&count_chars(&input)).unwrap();
     let ptr = message.as_ptr() as i32;
