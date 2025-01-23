@@ -46,6 +46,7 @@ pub async fn execute_code(Json(payload): Json<CodeSubmission>) -> Json<Execution
 }
 
 fn write_file(path: &Path, source_code: &str) -> Result<(), anyhow::Error> {
+    println!("writing to: {path:?}");
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
@@ -94,6 +95,9 @@ async fn compile_and_run_wasm(payload: &CodeSubmission) -> Result<ExecutionResul
     );
     let src_dir = Path::new(&template);
     let dst_dir = temp_dir.path();
+    println!("copy src: {src_dir:?}");
+    println!("copy dst: {dst_dir:?}");
+
     copy_template(src_dir, dst_dir)?;
 
     if !matches!(payload.function, Function::Param) {
@@ -109,7 +113,7 @@ async fn compile_and_run_wasm(payload: &CodeSubmission) -> Result<ExecutionResul
             .ok_or(anyhow!("Error converting temp name to string"))?
     )
     .replace(".", "_");
-    customize_cargo(&dst_dir.join("cargo.toml"), &unique_name)?;
+    customize_cargo(&dst_dir.join("Cargo.toml"), &unique_name)?;
 
     let target_dir = env::current_dir()?.join("target");
 
@@ -151,6 +155,8 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
     let mut store = Store::new(&engine, wasi);
     store.set_fuel(500_000)?;
 
+    println!("loading module: target/wasm32-wasip1/release/{file_name}.wasm");
+
     let module = Module::from_file(
         &engine,
         format!("target/wasm32-wasip1/release/{file_name}.wasm"),
@@ -181,6 +187,8 @@ fn run_wasm(file_name: &str, payload: &CodeSubmission) -> Result<ExecutionResult
 
     let result = resolve_string(memory.data(&store), ptr)?;
     let deserialized: serde_json::Value = serde_json::from_str(&result)?;
+
+    println!("deleting: target/wasm32-wasip1/release/{file_name}.wasm");
 
     fs::remove_file(format!("target/wasm32-wasip1/release/{file_name}.wasm"))?;
     fs::remove_file(format!("target/wasm32-wasip1/release/{file_name}.d"))?;
